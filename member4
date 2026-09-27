@@ -8,7 +8,7 @@ const CONFIG = {
   TEAM_TRACKER_URL: 'https://docs.google.com/spreadsheets/d/1G8Y_F7jAgyZ1uyJ1yUIGBzNyn0nnVv1PWPg2bp9Jlvw/edit?gid=801001974#gid=801001974',
   MEMBER_ID: 'MEM-04',
   MEMBER_NAME: 'Member 4',
-  DESIGNATION: 'Senior Architect',
+  DESIGNATION: 'Project Manager',
   FONT: 'Google Sans'
 };
 
