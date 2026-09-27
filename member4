@@ -1,0 +1,502 @@
+/**************************************************************
+ * CVA STUDIO — INDIVIDUAL MEMBER WORKSPACE WITH ADVANCED TIMER
+ *
+ * MEMBER: MEM-04 (Member 4 - Project Manager)
+ **************************************************************/
+
+const CONFIG = {
+  TEAM_TRACKER_URL: 'https://docs.google.com/spreadsheets/d/1G8Y_F7jAgyZ1uyJ1yUIGBzNyn0nnVv1PWPg2bp9Jlvw/edit?gid=801001974#gid=801001974',
+  MEMBER_ID: 'MEM-04',
+  MEMBER_NAME: 'Member 4',
+  DESIGNATION: 'Senior Architect',
+  FONT: 'Google Sans'
+};
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Member Workspace')
+    .addItem('Setup / Refresh Workspace', 'setupMemberWorkspace')
+    .addSeparator()
+    .addItem('▶ Start Timer (Selected Row)', 'startSelectedTimer')
+    .addItem('⏹ Stop & Log Timer (Selected Row)', 'stopSelectedTimer')
+    .addItem('🔄 Reset Selected Row', 'resetSelectedTimer')
+    .addItem('➕ Add Tracker Row', 'addTrackerRow')
+    .addSeparator()
+    .addItem('Test Team Tracker Connection', 'testTeamTrackerConnection')
+    .addToUi();
+}
+
+/**
+ * AUTOMATIC SIDE-BY-SIDE BUTTON TRIGGER
+ * - Checking Column H (Start) -> Starts Timer
+ * - Checking Column I (Stop)  -> Stops & Logs Timer
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== 'My Workspace') return;
+
+  const col = e.range.getColumn();
+  const row = e.range.getRow();
+
+  const quickStatsFinder = sheet.createTextFinder('QUICK STATS').findNext();
+  if (!quickStatsFinder) return;
+  const quickStatsRow = quickStatsFinder.getRow();
+
+  if (row <= 17 || row >= quickStatsRow) return;
+
+  const val = e.range.getValue();
+
+  // Column H = Start Button
+  if (col === 8 && val === true) {
+    startTimerForRow(sheet, row);
+  }
+
+  // Column I = Stop Button
+  if (col === 9 && val === true) {
+    stopTimerForRow(sheet, row);
+  }
+}
+
+function setupMemberWorkspace() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const connection = testTeamTrackerConnection();
+  if (!connection) {
+    SpreadsheetApp.getUi().alert(
+      'Team Tracker connection failed.\n\nOpen the "Connection Test" sheet to review the error.'
+    );
+    return;
+  }
+
+  createLinkedSheets(ss);
+  buildDashboard(ss);
+  buildMyProjects(ss);
+  buildMyTasks(ss);
+  buildMyHours(ss);
+
+  const dashboard = ss.getSheetByName('My Workspace');
+  if (dashboard) {
+    ss.setActiveSheet(dashboard);
+    ss.moveActiveSheet(1);
+  }
+
+  SpreadsheetApp.getUi().alert(
+    'MEM-02 Workspace created.\n\nCheck "▶ Start" in Column H to start, or "⏹ Stop" in Column I to log hours.'
+  );
+}
+
+function testTeamTrackerConnection() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Connection Test') || ss.insertSheet('Connection Test');
+  sheet.clear();
+
+  sheet.getRange('A1:D1').merge()
+    .setValue('CVA STUDIO — TEAM TRACKER CONNECTION TEST')
+    .setFontFamily(CONFIG.FONT).setFontSize(16).setFontWeight('bold')
+    .setBackground('#1F4E79').setFontColor('#FFFFFF');
+
+  sheet.getRange('A3').setValue('Team Tracker URL').setFontWeight('bold');
+  sheet.getRange('B3:D3').merge().setValue(CONFIG.TEAM_TRACKER_URL);
+
+  try {
+    const source = SpreadsheetApp.openByUrl(CONFIG.TEAM_TRACKER_URL);
+    sheet.getRange('A5').setValue('Connection Status').setFontWeight('bold');
+    sheet.getRange('B5').setValue('CONNECTED').setFontWeight('bold');
+    sheet.getRange('A6').setValue('Source Spreadsheet').setFontWeight('bold');
+    sheet.getRange('B6').setValue(source.getName());
+
+    const sourceSheets = source.getSheets().map(s => [s.getName()]);
+    sheet.getRange('A8').setValue('Available Source Sheets').setFontWeight('bold');
+    sheet.getRange(9, 1, sourceSheets.length, 1).setValues(sourceSheets);
+
+    sheet.getRange('A1:D20').setFontFamily(CONFIG.FONT);
+    sheet.autoResizeColumns(1, 4);
+    return true;
+  } catch (error) {
+    sheet.getRange('A5').setValue('Connection Status').setFontWeight('bold');
+    sheet.getRange('B5:D5').merge().setValue('FAILED').setFontWeight('bold');
+    sheet.getRange('A7').setValue('Error').setFontWeight('bold');
+    sheet.getRange('B7:D10').merge().setValue(error.message);
+    sheet.getRange('A1:D20').setFontFamily(CONFIG.FONT);
+    sheet.autoResizeColumns(1, 4);
+    return false;
+  }
+}
+
+function createLinkedSheets(ss) {
+  const sources = [
+    { name: 'Team Directory', range: 'A1:C100' },
+    { name: 'Project Master (View)', range: 'A1:I1000' },
+    { name: 'Master Task Sheet', range: 'A1:I1000' },
+    { name: 'Time & Burn Log', range: 'A1:G1000' }
+  ];
+
+  sources.forEach(source => {
+    let sheet = ss.getSheetByName(source.name) || ss.insertSheet(source.name);
+    sheet.clear();
+
+    const formula = `=IMPORTRANGE("\({CONFIG.TEAM_TRACKER_URL}", "\){source.name}!${source.range}")`;
+    sheet.getRange('A1').setFormula(formula);
+    sheet.getRange('A1:I1000').setFontFamily(CONFIG.FONT);
+    sheet.setFrozenRows(1);
+  });
+}
+
+function buildDashboard(ss) {
+  let sheet = ss.getSheetByName('My Workspace') || ss.insertSheet('My Workspace');
+  sheet.clear();
+
+  // Header
+  sheet.getRange('A1:I1').merge().setValue('CVA STUDIO — MEMBER 2 WORKSPACE')
+    .setFontFamily(CONFIG.FONT).setFontSize(20).setFontWeight('bold').setFontColor('#1F4E79');
+  sheet.setRowHeight(1, 45);
+
+  // Profile Details
+  sheet.getRange('A3').setValue('MEMBER ID').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('B3').setValue(CONFIG.MEMBER_ID);
+  sheet.getRange('D3').setValue('MEMBER NAME').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('E3').setValue(CONFIG.MEMBER_NAME);
+  sheet.getRange('A4').setValue('DESIGNATION').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('B4:E4').merge();
+  sheet.getRange('B4').setFormula(`=IFERROR(VLOOKUP("\({CONFIG.MEMBER_ID}", 'Team Directory'!A:C, 3, FALSE), "\){CONFIG.DESIGNATION}")`);
+
+  // Current Project Section
+  sheet.getRange('A7:I7').merge().setValue('CURRENT PROJECT').setFontWeight('bold').setFontColor('#FFFFFF').setBackground('#1F4E79');
+
+  sheet.getRange('A8').setValue('Project').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('B8:I8').merge();
+  sheet.getRange('B8').setFormula(`=IFERROR(INDEX('Project Master (View)'!B:B, MATCH("${CONFIG.MEMBER_NAME}", 'Project Master (View)'!E:E, 0)), "No project assigned")`).setFontWeight('bold');
+
+  sheet.getRange('A9').setValue('Project Status').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('B9:I9').merge();
+  sheet.getRange('B9').setFormula(`=IFERROR(INDEX('Project Master (View)'!H:H, MATCH("${CONFIG.MEMBER_NAME}", 'Project Master (View)'!E:E, 0)), "—")`).setFontWeight('bold');
+
+  sheet.getRange('A10').setValue('Current Stage').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('B10:I10').merge();
+  sheet.getRange('B10').setFormula(`=IF(B9="Discovery","Concept / Discovery",IF(B9="In Progress","Execution / Delivery",IF(B9="Under Review","Review / Approval",IF(B9="Completed","Completed",IF(B9="On Hold","On Hold","—")))))`);
+
+  sheet.getRange('A11').setValue('Target Delivery').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('B11:I11').merge();
+  sheet.getRange('B11').setFormula(`=IFERROR(INDEX('Project Master (View)'!G:G, MATCH("${CONFIG.MEMBER_NAME}", 'Project Master (View)'!E:E, 0)), "—")`).setNumberFormat('dd-mmm-yyyy');
+
+  // Progress Section
+  sheet.getRange('A13:I13').merge().setValue('PROJECT PROGRESS').setFontWeight('bold').setFontColor('#FFFFFF').setBackground('#1F4E79');
+  sheet.getRange('A14').setValue('Progress').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange('B14:H14').merge();
+  sheet.getRange('B14').setFormula(`=IF(B9="Discovery",SPARKLINE(20,{"charttype","bar";"max",100}),IF(B9="In Progress",SPARKLINE(60,{"charttype","bar";"max",100}),IF(B9="Under Review",SPARKLINE(80,{"charttype","bar";"max",100}),IF(B9="Completed",SPARKLINE(100,{"charttype","bar";"max",100}),SPARKLINE(0,{"charttype","bar";"max",100})))))`);
+  sheet.getRange('I14').setFormula(`=IF(B9="Discovery",20,IF(B9="In Progress",60,IF(B9="Under Review",80,IF(B9="Completed",100,0))))`).setNumberFormat('0"%"');
+
+  // Live Timer Table Section with Side-by-Side Start / Stop Buttons
+  sheet.getRange('A16:I16').merge().setValue('LIVE TIME TRACKER').setFontWeight('bold').setFontColor('#FFFFFF').setBackground('#1F4E79');
+  
+  const timerHeaders = ['Row', 'Project ID', 'Activity / Description', 'Start Time', 'Stop Time', 'Hours', 'Status', '▶ Start', '⏹ Stop'];
+  sheet.getRange(17, 1, 1, 9).setValues([timerHeaders])
+    .setFontWeight('bold').setBackground('#D9E1F2').setFontColor('#1F4E79');
+
+  // Populate initial 3 tracker rows
+  for (let i = 1; i <= 3; i++) {
+    const rowNum = 17 + i;
+    sheet.getRange(rowNum, 1).setValue(i);
+    sheet.getRange(rowNum, 2).setFormula(`=IFERROR(INDEX('Project Master (View)'!A:A, MATCH("${CONFIG.MEMBER_NAME}", 'Project Master (View)'!E:E, 0)), "PRJ-001")`);
+    sheet.getRange(rowNum, 3).setValue('Working on project task');
+    sheet.getRange(rowNum, 4).setValue('—');
+    sheet.getRange(rowNum, 5).setValue('—');
+    sheet.getRange(rowNum, 6).setValue(0).setNumberFormat('0.00');
+    sheet.getRange(rowNum, 7).setValue('READY').setFontColor('#595959').setFontWeight('bold');
+    
+    // Column H = Start Checkbox, Column I = Stop Checkbox
+    sheet.getRange(rowNum, 8).insertCheckboxes();
+    sheet.getRange(rowNum, 9).insertCheckboxes();
+  }
+
+  // Quick Stats Section
+  buildQuickStatsSection(sheet, 21);
+
+  // Formatting
+  sheet.getRange('A1:I30').setFontFamily(CONFIG.FONT).setVerticalAlignment('middle');
+  sheet.getRange('A3:I14').setBorder(true, true, true, true, true, true, '#D0D7DE', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange('A16:I20').setBorder(true, true, true, true, true, true, '#D0D7DE', SpreadsheetApp.BorderStyle.SOLID);
+
+  const colWidths = [50, 120, 220, 140, 140, 80, 100, 90, 90];
+  colWidths.forEach((width, idx) => sheet.setColumnWidth(idx + 1, width));
+}
+
+function buildQuickStatsSection(sheet, startRow) {
+  sheet.getRange(startRow, 1, 1, 9).merge().setValue('QUICK STATS').setFontWeight('bold').setFontColor('#FFFFFF').setBackground('#1F4E79');
+  
+  const r = startRow + 1;
+  sheet.getRange(r, 1).setValue('Active Tasks').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange(r, 2, 1, 2).merge().setFormula(`=COUNTIFS('Master Task Sheet'!D:D, "${CONFIG.MEMBER_NAME}", 'Master Task Sheet'!H:H, "<>Completed")`);
+
+  sheet.getRange(r, 4).setValue('Total Hours Logged').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange(r, 5, 1, 2).merge().setFormula(`=SUMIF('Time & Burn Log'!C:C, "${CONFIG.MEMBER_NAME}", 'Time & Burn Log'!F:F)`);
+
+  sheet.getRange(r, 7).setValue('Completed Tasks').setFontWeight('bold').setBackground('#EAF0F6');
+  sheet.getRange(r, 8, 1, 2).merge().setFormula(`=COUNTIFS('Master Task Sheet'!D:D, "${CONFIG.MEMBER_NAME}", 'Master Task Sheet'!H:H, "Completed")`);
+
+  sheet.getRange(startRow, 1, 2, 9).setBorder(true, true, true, true, true, true, '#D0D7DE', SpreadsheetApp.BorderStyle.SOLID);
+}
+
+function buildMyProjects(ss) {
+  let sheet = ss.getSheetByName('My Projects');
+  if (sheet) ss.deleteSheet(sheet);
+  sheet = ss.insertSheet('My Projects');
+
+  const headers = ['Project ID', 'Project Name', 'Package Tier', 'Client / Sponsor', 'Project Status', 'Target Delivery', 'Outcome', 'Project Lead'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  sheet.getRange('A2').setFormula(
+    `=IFERROR(FILTER({'Project Master (View)'!A2:A1000, 'Project Master (View)'!B2:B1000, 'Project Master (View)'!C2:C1000, 'Project Master (View)'!D2:D1000, 'Project Master (View)'!H2:H1000, 'Project Master (View)'!G2:G1000, 'Project Master (View)'!I2:I1000, 'Project Master (View)'!E2:E1000}, 'Project Master (View)'!E2:E1000="${CONFIG.MEMBER_NAME}"), "No projects assigned")`
+  );
+
+  styleDataSheet(sheet, headers.length);
+  sheet.getRange('F2:F1000').setNumberFormat('dd-mmm-yyyy');
+  sheet.getRange('A2:H1000').setWrap(true);
+}
+
+function buildMyTasks(ss) {
+  let sheet = ss.getSheetByName('My Tasks');
+  if (sheet) ss.deleteSheet(sheet);
+  sheet = ss.insertSheet('My Tasks');
+
+  const headers = ['Task ID', 'Project ID', 'Task Description', 'Priority', 'Deadline', 'Status', 'Collaborators / Support', 'Deliverable', 'Primary DRI'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  sheet.getRange('A2').setFormula(
+    `=IFERROR(FILTER({'Master Task Sheet'!A2:A1000, 'Master Task Sheet'!B2:B1000, 'Master Task Sheet'!C2:C1000, 'Master Task Sheet'!F2:F1000, 'Master Task Sheet'!G2:G1000, 'Master Task Sheet'!H2:H1000, 'Master Task Sheet'!E2:E1000, 'Master Task Sheet'!I2:I1000, 'Master Task Sheet'!D2:D1000}, (('Master Task Sheet'!D2:D1000="\({CONFIG.MEMBER_NAME}") + (REGEXMATCH('Master Task Sheet'!E2:E1000, "(^|,\\s*)" & "\){CONFIG.MEMBER_NAME}" & "(,|$)")))), "No tasks assigned")`
+  );
+
+  styleDataSheet(sheet, headers.length);
+  sheet.getRange('E2:E1000').setNumberFormat('dd-mmm-yyyy');
+  sheet.getRange('A2:I1000').setWrap(true);
+}
+
+function buildMyHours(ss) {
+  let sheet = ss.getSheetByName('My Hours');
+  if (sheet) ss.deleteSheet(sheet);
+  sheet = ss.insertSheet('My Hours');
+
+  const headers = ['Log ID', 'Date', 'Project ID', 'Hours', 'Activity', 'Founder?', 'Member'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  sheet.getRange('A2').setFormula(
+    `=IFERROR(FILTER({'Time & Burn Log'!A2:A1000, 'Time & Burn Log'!B2:B1000, 'Time & Burn Log'!E2:E1000, 'Time & Burn Log'!F2:F1000, 'Time & Burn Log'!G2:G1000, 'Time & Burn Log'!D2:D1000, 'Time & Burn Log'!C2:C1000}, 'Time & Burn Log'!C2:C1000="${CONFIG.MEMBER_NAME}"), "No hours logged")`
+  );
+
+  styleDataSheet(sheet, headers.length);
+  sheet.getRange('B2:B1000').setNumberFormat('dd-mmm-yyyy');
+}
+
+function styleDataSheet(sheet, columns) {
+  sheet.getRange(1, 1, 1, columns)
+    .setBackground('#1F4E79').setFontColor('#FFFFFF').setFontWeight('bold').setFontFamily(CONFIG.FONT);
+
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 100, columns).setFontFamily(CONFIG.FONT);
+  sheet.getRange(1, 1, 100, columns).setBorder(true, true, true, true, true, true, '#D0D7DE', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.autoResizeColumns(1, columns);
+
+  if (columns >= 8) {
+    sheet.setColumnWidth(3, 300);
+    sheet.setColumnWidth(7, 220);
+    sheet.setColumnWidth(8, 250);
+  }
+}
+
+/**************************************************************
+ * DYNAMIC LIVE TIMER & ROW CONTROLS
+ **************************************************************/
+
+function addTrackerRow() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('My Workspace');
+  if (!sheet) return;
+
+  const finder = sheet.createTextFinder('QUICK STATS').findNext();
+  if (!finder) return;
+
+  const quickStatsHeaderRow = finder.getRow();
+  sheet.insertRowBefore(quickStatsHeaderRow);
+
+  const newRow = quickStatsHeaderRow;
+-   const trackerCount = newRow
+17;
+
+  sheet.getRange(newRow, 1).setValue(trackerCount);
+  sheet.getRange(newRow, 2).setFormula(`=IFERROR(INDEX('Project Master (View)'!A:A, MATCH("${CONFIG.MEMBER_NAME}", 'Project Master (View)'!E:E, 0)), "PRJ-001")`);
+  sheet.getRange(newRow, 3).setValue('New Activity Task');
+  sheet.getRange(newRow, 4).setValue('—');
+  sheet.getRange(newRow, 5).setValue('—');
+  sheet.getRange(newRow, 6).setValue(0).setNumberFormat('0.00');
+  sheet.getRange(newRow, 7).setValue('READY').setFontColor('#595959').setFontWeight('bold');
+  
+  // Add Start and Stop Checkboxes
+  sheet.getRange(newRow, 8).insertCheckboxes();
+  sheet.getRange(newRow, 9).insertCheckboxes();
+
+  sheet.getRange(newRow, 1, 1, 9).setFontFamily(CONFIG.FONT).setVerticalAlignment('middle');
+-   sheet.getRange(16, 1, newRow
+15, 9).setBorder(true, true, true, true, true, true, '#D0D7DE', SpreadsheetApp.BorderStyle.SOLID);
+
+  SpreadsheetApp.getUi().alert(`Added row #${trackerCount} to the Live Time Tracker table.`);
+}
+
+function startSelectedTimer() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('My Workspace');
+  if (!sheet || ss.getActiveSheet().getName() !== 'My Workspace') {
+    SpreadsheetApp.getUi().alert('Please switch to the "My Workspace" sheet first.');
+    return;
+  }
+
+  const activeRow = sheet.getActiveCell().getRow();
+  const quickStatsRow = sheet.createTextFinder('QUICK STATS').findNext().getRow();
+  if (activeRow <= 17 || activeRow >= quickStatsRow) {
+    SpreadsheetApp.getUi().alert('Please click inside a valid Live Time Tracker row.');
+    return;
+  }
+
+  startTimerForRow(sheet, activeRow);
+}
+
+function stopSelectedTimer() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('My Workspace');
+  if (!sheet || ss.getActiveSheet().getName() !== 'My Workspace') {
+    SpreadsheetApp.getUi().alert('Please switch to the "My Workspace" sheet first.');
+    return;
+  }
+
+  const activeRow = sheet.getActiveCell().getRow();
+  const quickStatsRow = sheet.createTextFinder('QUICK STATS').findNext().getRow();
+  
+  if (activeRow <= 17 || activeRow >= quickStatsRow) {
+    SpreadsheetApp.getUi().alert('Please click inside a valid Live Time Tracker row.');
+    return;
+  }
+
+  stopTimerForRow(sheet, activeRow);
+}
+
+function startTimerForRow(sheet, activeRow) {
+  const currentStatus = sheet.getRange(activeRow, 7).getValue();
+  if (currentStatus === 'RUNNING') {
+    SpreadsheetApp.getUi().alert('Timer is already running for this row!');
+    sheet.getRange(activeRow, 8).setValue(false);
+    return;
+  }
+
+  const startTime = new Date();
+  sheet.getRange(activeRow, 4).setValue(startTime).setNumberFormat('hh:mm:ss a');
+  sheet.getRange(activeRow, 5).setValue('—');
+  sheet.getRange(activeRow, 7).setValue('RUNNING').setFontColor('#008000');
+  
+  // Uncheck Start Checkbox button
+  sheet.getRange(activeRow, 8).setValue(false);
+  sheet.getRange(activeRow, 9).setValue(false);
+  
+  PropertiesService.getDocumentProperties().setProperty('TIMER_START_ROW_' + activeRow, startTime.getTime().toString());
+
+  SpreadsheetApp.getUi().alert(`Timer STARTED for Row \({sheet.getRange(activeRow, 1).getValue()} at\){Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'hh:mm:ss a')}`);
+}
+
+function stopTimerForRow(sheet, activeRow) {
+  const currentStatus = sheet.getRange(activeRow, 7).getValue();
+  if (currentStatus !== 'RUNNING') {
+    SpreadsheetApp.getUi().alert('No active running timer on this row. Start it first!');
+    sheet.getRange(activeRow, 9).setValue(false);
+    return;
+  }
+
+  const propKey = 'TIMER_START_ROW_' + activeRow;
+  const savedTimeStr = PropertiesService.getDocumentProperties().getProperty(propKey);
+  let startTime = savedTimeStr ? new Date(parseInt(savedTimeStr)) : sheet.getRange(activeRow, 4).getValue();
+
+  if (!(startTime instanceof Date) || isNaN(startTime.getTime())) {
+    SpreadsheetApp.getUi().alert('Error reading start time for this row.');
+    sheet.getRange(activeRow, 9).setValue(false);
+    return;
+  }
+
+  const stopTime = new Date();
+  const durationMs = stopTime.getTime() - startTime.getTime();
+-   const hoursLogged = Math.max(0.01, parseFloat((durationMs / (1000
+- 60
+60)).toFixed(2)));
+
+  const projectId = sheet.getRange(activeRow, 2).getValue() || 'PRJ-001';
+  const activity = sheet.getRange(activeRow, 3).getValue() || 'General Work';
+
+  const confirm = SpreadsheetApp.getUi().alert(
+    `Stop & Log Hours for Row ${sheet.getRange(activeRow, 1).getValue()}?`,
+    `Project: \({projectId}\nActivity:\){activity}\nStart: \({Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'hh:mm:ss a')}\nStop:\){Utilities.formatDate(stopTime, Session.getScriptTimeZone(), 'hh:mm:ss a')}\n\nTotal Hours: ${hoursLogged} hrs\n\nLog this entry to Central Team Tracker?`,
+    SpreadsheetApp.getUi().ButtonSet.YES_NO
+  );
+
+  if (confirm !== SpreadsheetApp.getUi().Button.YES) {
+    sheet.getRange(activeRow, 9).setValue(false);
+    return;
+  }
+
+  try {
+    const centralSS = SpreadsheetApp.openByUrl(CONFIG.TEAM_TRACKER_URL);
+    const centralSheet = centralSS.getSheetByName('Time & Burn Log');
+
+    if (!centralSheet) throw new Error('Could not find "Time & Burn Log" sheet in main Team Tracker.');
+
+    const nextRow = centralSheet.getLastRow() + 1;
+    const logId = 'LOG-' + Utilities.formatDate(stopTime, Session.getScriptTimeZone(), 'yyyyMMddHHmmss');
+
+    centralSheet.getRange(nextRow, 1, 1, 7).setValues([[
+      logId,
+      stopTime,
+      CONFIG.MEMBER_NAME,
+      'No',
+      projectId,
+      hoursLogged,
+      activity
+    ]]);
+
+    centralSheet.getRange(nextRow, 2).setNumberFormat('dd-mmm-yyyy');
+    centralSheet.getRange(nextRow, 6).setNumberFormat('0.00');
+
+    sheet.getRange(activeRow, 5).setValue(stopTime).setNumberFormat('hh:mm:ss a');
+    sheet.getRange(activeRow, 6).setValue(hoursLogged);
+    sheet.getRange(activeRow, 7).setValue('LOGGED').setFontColor('#0066CC');
+    sheet.getRange(activeRow, 8).setValue(false);
+    sheet.getRange(activeRow, 9).setValue(false);
+
+    PropertiesService.getDocumentProperties().deleteProperty(propKey);
+
+    SpreadsheetApp.getUi().alert(`Successfully logged \({hoursLogged} hours for\){projectId} to the Central Team Tracker!`);
+  } catch (err) {
+    sheet.getRange(activeRow, 9).setValue(false);
+    SpreadsheetApp.getUi().alert(`Failed to log to Central Tracker:\n${err.message}`);
+  }
+}
+
+function resetSelectedTimer() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('My Workspace');
+  if (!sheet) return;
+
+  const activeRow = sheet.getActiveCell().getRow();
+  const quickStatsRow = sheet.createTextFinder('QUICK STATS').findNext().getRow();
+
+  if (activeRow <= 17 || activeRow >= quickStatsRow) {
+    SpreadsheetApp.getUi().alert('Please click inside a valid Live Time Tracker row.');
+    return;
+  }
+
+  sheet.getRange(activeRow, 4).setValue('—');
+  sheet.getRange(activeRow, 5).setValue('—');
+  sheet.getRange(activeRow, 6).setValue(0);
+  sheet.getRange(activeRow, 7).setValue('READY').setFontColor('#595959');
+  sheet.getRange(activeRow, 8).setValue(false);
+  sheet.getRange(activeRow, 9).setValue(false);
+
+  PropertiesService.getDocumentProperties().deleteProperty('TIMER_START_ROW_' + activeRow);
+  SpreadsheetApp.getUi().alert('Row reset.');
+} when i want to use stop button error of connection to main sheet is comming 
